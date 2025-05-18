@@ -1,84 +1,37 @@
 import keras
-from keras import layers
 
-@keras.saving.register_keras_serializable(package='TCN')
-class TCNBlock(layers.Layer):
-    def __init__(self, filters, kernel, dilation, dropout, name='TCNBlock', **kwargs):
-        super().__init__(name=name, **kwargs)
-        self.conv1 = layers.Conv1D(filters, kernel, padding='causal', dilation_rate=dilation)
-        self.norm1 = layers.LayerNormalization()
-        self.act1 = layers.ReLU()
-        self.dropout1 = layers.Dropout(dropout)
-        
-        self.conv2 = layers.Conv1D(filters, kernel, padding='causal', dilation_rate=dilation)
-        self.norm2 = layers.LayerNormalization()
-        self.act2 = layers.ReLU()
-        self.dropout2 = layers.Dropout(dropout)
+def tcn_block(in_channels, out_channels, kernel, dilation, dropout):
+    x = keras.layers.Conv1D(out_channels, kernel_size=kernel, dilation_rate=dilation, padding='causal')(in_channels)
+    x = keras.layers.LayerNormalization()(x)
+    x = keras.layers.ReLU()(x)
+    x = keras.layers.SpatialDropout1D(dropout)(x)
 
-        self.downsample = None
-        self.add = layers.Add()
+    x = keras.layers.Conv1D(out_channels, kernel_size=kernel, dilation_rate=dilation, padding='causal')(x)
+    x = keras.layers.LayerNormalization()(x)
+    x = keras.layers.ReLU()(x)
+    x = keras.layers.SpatialDropout1D(dropout)(x)
 
-    def build(self, input_shape):
-        if input_shape[-1] != self.conv1.filters:
-            self.downsample = layers.Conv1D(self.conv1.filters, kernel_size=1, padding='same')
-        super().build(input_shape)
+    if in_channels.shape[-1] != out_channels: in_channels = keras.layers.Conv1D(out_channels, kernel_size=1)(in_channels)
+    x = keras.layers.Add()([x, in_channels])
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.norm1(x)
-        x = self.act1(x)
-        x = self.dropout1(x, training=training)
+    return x
 
-        x = self.conv2(x)
-        x = self.norm2(x)
-        x = self.act2(x)
-        x = self.dropout2(x, training=training)
+def tcn(num_inputs, channels_list=[64], kernel=3, dropout=0.2, repeat=1, skip=True):
+    inputs = keras.layers.Input(shape=num_inputs)
+    x = inputs
 
-        res = inputs if self.downsample is None else self.downsample(inputs)
-        return self.add([x, res])
+    levels = len(channels_list)
+    for level, channels in enumerate(channels_list):
+        dilation = 2**level
+        level_input = x
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            'filters': self.conv1.filters,
-            'kernel': self.conv1.kernel[0],
-            'dilation': self.conv1.dilation[0],
-            'dropout': self.dropout1.rate
-        })
-        return config
+        for _ in range(repeat):
+            x = tcn_block(x, channels, kernel, dilation, dropout)
 
-@keras.saving.register_keras_serializable(package='TCN')
-class TCN(keras.layers.Layer):
-    def __init__(self, blocks=1, filters=64, kernel=3, dropout=0.2, classes=1, name='TCN', **kwargs):
-        super().__init__(name=name, **kwargs)
-        self.tcn_blocks = [
-            TCNBlock(
-                filters=filters,
-                kernel=kernel,
-                dilation=2**i,
-                dropout=dropout
-            ) for i in range(blocks)
-        ]
-        self.global_pool = layers.GlobalAveragePooling1D(name='GAP')
-        self.output_layer = layers.Dense(classes, activation='sigmoid' if classes == 1 else 'softmax', name='Output')
+        if skip: x = keras.layers.Add()([x, level_input])
+    x = keras.layers.GlobalAveragePooling1D()(x)
+    output = keras.layers.Dense(1, activation='sigmoid')(x)
 
-    # def build(self, input_shape):
-    #     super().build(input_shape)
-
-    def call(self, inputs, training=False):
-        x = inputs
-        for block in self.tcn_blocks: x = block(x, training=training)
-        x = self.global_pool(x)
-        return self.output_layer(x)
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            'blocks': len(self.tcn_blocks),
-            'filters': self.tcn_blocks[0].conv1.filters,
-            'kernel': self.tcn_blocks[0].conv1.kernel[0],
-            'dropout': self.tcn_blocks[0].dropout1.rate,
-            'classes': self.output_layer.units
-        })
-        return config
+    model = keras.Model(inputs, output)
+    return model
 
