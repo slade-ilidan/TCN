@@ -16,7 +16,7 @@ def tcn_block(in_channels, out_channels, kernel, dilation, dropout):
 
     return x
 
-def tcn(num_inputs, channels_list=[64], kernel=3, dropout=0.2, repeat=1, skip=True):
+def tcn(num_inputs, channels_list=[64], kernel=3, dropout=0.2, repeat=1):
     inputs = keras.layers.Input(shape=num_inputs)
     x = inputs
 
@@ -28,7 +28,6 @@ def tcn(num_inputs, channels_list=[64], kernel=3, dropout=0.2, repeat=1, skip=Tr
         for _ in range(repeat):
             x = tcn_block(x, channels, kernel, dilation, dropout)
 
-        if skip: x = keras.layers.Add()([x, level_input])
     x = keras.layers.GlobalAveragePooling1D()(x)
     output = keras.layers.Dense(1, activation='sigmoid')(x)
 
