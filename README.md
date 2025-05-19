@@ -1,4 +1,4 @@
-# Temporal Convolutional Network (TCN) in Keras
+# Temporal Convolutional Classifier in Keras
 
 This repository implements a **Temporal Convolutional Network (TCN)** for binary sequence classification tasks, using **causal convolutions**, **dilated convolutions**, and **skip connections** to capture long-range temporal dependencies. It is one page, and can be adjusted based on your needs.
 
